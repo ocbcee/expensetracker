@@ -276,20 +276,10 @@
       </div>
       <label class="fld">Spent on</label>
       <div class="chips" id="trvSubChips"></div>
-      <label class="fld">Paying in foreign currency?</label>
-      <div class="grid2">
-        <div><select id="fxCur" onchange="onFxCurChange()">
-          <option>JPY</option><option>MYR</option><option>THB</option><option>IDR</option>
-          <option>CNY</option><option>KRW</option><option>TWD</option><option>VND</option>
-          <option>USD</option><option>EUR</option><option>GBP</option><option>AUD</option>
-          <option>HKD</option><option>PHP</option><option>INR</option>
-        </select></div>
-        <div><input id="fxAmt" type="number" inputmode="decimal" placeholder="Foreign amount"></div>
+      <div class="newcat" id="trvNewSub" style="display:none">
+        <input id="trvNewSubName" type="text" placeholder="New sub-category name" maxlength="20">
+        <button onclick="addTravelSub()">Add</button>
       </div>
-      <label class="fld">Rate (1 unit = ? SGD)</label>
-      <input id="fxRate" type="number" inputmode="decimal" placeholder="e.g. 0.0086">
-      <button class="btn small" onclick="fxConvert()">Convert → fill SGD amount</button>
-      <div class="fare-note">Tries to fetch the live rate when you pick a currency; if it can't (offline or blocked), key in the rate once — it's remembered per currency.</div>
     </div>
 
     <div class="grid2">
@@ -304,9 +294,13 @@
 <!-- ============ SUBSCRIPTIONS PAGE ============ -->
 <div class="page" id="page-subs">
   <div class="card">
-    <h2>Add a subscription</h2>
+    <h2>Add a recurring payment</h2>
+    <div class="toggle">
+      <button id="sgOut" class="on-exp" onclick="setSubDir('out')">Payment out</button>
+      <button id="sgIn" onclick="setSubDir('in')">Money in</button>
+    </div>
     <label class="fld">Name</label>
-    <input id="sName" type="text" placeholder="e.g. Netflix, Gym, Spotify">
+    <input id="sName" type="text" placeholder="e.g. Netflix, Gym, allowance">
     <div class="grid2">
       <div>
         <label class="fld">Amount ($)</label>
@@ -348,7 +342,7 @@
     </div>
     <button class="btn" onclick="saveSub()">Save subscription</button>
   </div>
-  <h2 style="margin:4px 2px 10px">Your subscriptions</h2>
+  <h2 style="margin:4px 2px 10px">Your recurring payments</h2>
   <div id="subList"></div>
 </div>
 
@@ -372,6 +366,7 @@
         <option>Private hire</option>
         <option>Bus</option>
         <option>MRT/LRT</option>
+        <option>Other</option>
       </select>
     </div>
   </div>
@@ -451,7 +446,7 @@
 <nav class="tabs">
   <button class="active" id="tab-track" onclick="showPage('track')"><span class="ico">✎</span>Track</button>
   <button id="tab-history" onclick="showPage('history')"><span class="ico">▤</span>History</button>
-  <button id="tab-subs" onclick="showPage('subs')"><span class="ico">↻</span>Subs</button>
+  <button id="tab-subs" onclick="showPage('subs')"><span class="ico">↻</span>Recurring</button>
   <button id="tab-summary" onclick="showPage('summary')"><span class="ico">◔</span>Summary</button>
 </nav>
 
@@ -460,7 +455,7 @@
 <script>
 /* ---------------- constants ---------------- */
 var EXP_CATS=['Food','Transport','Groceries','Shopping','Bills','Entertainment','Travel','Health','Subscriptions','Other'];
-var TRAVEL_SUBS=['Transport','Food','Shopping','Accommodation','Attractions','Sim/Data','Other'];
+var TRAVEL_SUBS=['Flights','Transport','Food','Shopping','Accommodation','Attractions','Sim/Data','Other'];
 var INC_CATS=['Salary','Freelance','Refund','Gift','Investment','Other'];
 var COLORS=['#0E5D3F','#B5452F','#C99A2E','#3A6EA5','#7B4FA0','#2E8C7F','#C4642E','#5B7553','#8A8A8A','#A0527D','#4E6E9E','#8C7A3E'];
 
@@ -514,10 +509,10 @@ var STATIONS={
 };
 
 /* ---------------- state ---------------- */
-var data={transactions:[],subscriptions:[],appliedSubs:{},customCats:{expense:[],income:[]},trips:[],favs:[],fxRates:{}};
+var data={transactions:[],subscriptions:[],appliedSubs:{},customCats:{expense:[],income:[],travel:[]},trips:[],favs:[]};
 var editingId=null;
 var entryType='expense', entryCat='Food', subCat='Subscriptions';
-var tMode=null, calcResult=null, trvSub='Food';
+var tMode=null, calcResult=null, trvSub='Food', subDir='out';
 var sumYM=ymOf(new Date());
 var histYM=ymOf(new Date());
 
@@ -542,9 +537,9 @@ async function load(){
       data.subscriptions=d.subscriptions||[];
       data.appliedSubs=d.appliedSubs||{};
       data.customCats=d.customCats||{expense:[],income:[]};
+      if(!data.customCats.travel)data.customCats.travel=[];
       data.trips=d.trips||[];
       data.favs=d.favs||[];
-      data.fxRates=d.fxRates||{};
     }
   }catch(e){/* first run */}
   applySubscriptions();
@@ -576,7 +571,7 @@ function applySubscriptions(){
           data.appliedSubs[wkey]=true;
           data.transactions.push({
             id:'t'+Date.now()+Math.random().toString(36).slice(2,6),
-            type:'expense', amount:s.amount, category:s.category,
+            type:s.dir==='in'?'income':'expense', amount:s.amount, category:s.category,
             desc:s.name, date:iso, fromSub:true
           });
         }
@@ -596,7 +591,7 @@ function applySubscriptions(){
           data.appliedSubs[key]=true;
           data.transactions.push({
             id:'t'+Date.now()+Math.random().toString(36).slice(2,6),
-            type:'expense', amount:s.amount, category:s.category,
+            type:s.dir==='in'?'income':'expense', amount:s.amount, category:s.category,
             desc:s.name, date:ymOf(due)+'-'+String(day).padStart(2,'0'),
             fromSub:true
           });
@@ -616,7 +611,7 @@ function applySubscriptions(){
         data.appliedSubs[key2]=true;
         data.transactions.push({
           id:'t'+Date.now()+Math.random().toString(36).slice(2,6),
-          type:'expense', amount:s.amount, category:s.category,
+          type:s.dir==='in'?'income':'expense', amount:s.amount, category:s.category,
           desc:s.name, date:ymOf(due2)+'-'+String(day2).padStart(2,'0'),
           fromSub:true
         });
@@ -633,11 +628,23 @@ function catsFor(kind){
 }
 function refreshChips(){
   renderChips('fCats',catsFor(entryType),entryCat,'f');
-  renderChips('sCats',catsFor('expense'),subCat,'s');
+  renderChips('sCats',catsFor(subDir==='in'?'income':'expense'),subCat,'s');
+}
+function setSubDir(d){
+  subDir=d;
+  $('sgOut').className=d==='out'?'on-exp':'';
+  $('sgIn').className=d==='in'?'on-inc':'';
+  subCat=d==='in'?'Salary':'Subscriptions';
+  $('sNewCat').style.display='none';
+  refreshChips();
+}
+function chipKind(which){
+  if(which==='f')return entryType==='income'?'income':'expense';
+  return subDir==='in'?'income':'expense';
 }
 function renderChips(elId,cats,selected,which){
   var el=$(elId); el.innerHTML='';
-  var kind=(which==='f'&&entryType==='income')?'income':'expense';
+  var kind=chipKind(which);
   var baseLen=(kind==='income'?INC_CATS:EXP_CATS).length;
   cats.forEach(function(c,i){
     var b=document.createElement('button');
@@ -646,7 +653,7 @@ function renderChips(elId,cats,selected,which){
     if(c===selected)b.classList.add('sel');
     b.onclick=function(){
       if(which==='f'){entryCat=c;renderChips('fCats',catsFor(entryType),c,'f');updateTransportPanel();}
-      else{subCat=c;renderChips('sCats',catsFor('expense'),c,'s');}
+      else{subCat=c;renderChips('sCats',catsFor(chipKind('s')),c,'s');}
     };
     if(isCustom){
       var x=document.createElement('span');
@@ -675,13 +682,14 @@ async function addCustomCat(which){
   var input=$(which+'NewCatName');
   var name=input.value.trim();
   if(!name){toast('Enter a category name');return;}
-  var kind=(which==='f'&&entryType==='income')?'income':'expense';
+  var kind=chipKind(which);
   var all=catsFor(kind).map(function(c){return c.toLowerCase();});
   if(all.indexOf(name.toLowerCase())>=0){toast('Category already exists');return;}
   data.customCats[kind].push(name);
   await persist();
   input.value=''; $(which+'NewCat').style.display='none';
   if(which==='f'){entryCat=name;}else{subCat=name;}
+  void 0;
   refreshChips(); updateTransportPanel();
   toast('Category "'+name+'" added');
 }
@@ -750,19 +758,49 @@ async function saveTrip(){
   toast('Trip saved: '+fmtTrip(trip));
   renderSummary();
 }
+function travelSubs(){return TRAVEL_SUBS.concat(data.customCats.travel);}
 function renderTravelSubChips(){
   var el=$('trvSubChips'); el.innerHTML='';
-  TRAVEL_SUBS.forEach(function(s){
+  travelSubs().forEach(function(sName,i){
     var b=document.createElement('button');
-    b.textContent=s;
-    if(s===trvSub)b.classList.add('sel');
-    b.onclick=function(){trvSub=s;renderTravelSubChips();};
+    b.textContent=sName;
+    if(sName===trvSub)b.classList.add('sel');
+    b.onclick=function(){trvSub=sName;renderTravelSubChips();};
+    if(i>=TRAVEL_SUBS.length){
+      var x=document.createElement('span');
+      x.className='rm'; x.textContent='✕';
+      x.onclick=function(ev){ev.stopPropagation();ev.preventDefault();removeTravelSub(sName);};
+      b.appendChild(x);
+    }
     el.appendChild(b);
   });
+  var add=document.createElement('button');
+  add.className='addcat'; add.textContent='+ Custom';
+  add.onclick=function(){
+    var row=$('trvNewSub');
+    row.style.display=row.style.display==='none'?'flex':'none';
+    if(row.style.display==='flex')$('trvNewSubName').focus();
+  };
+  el.appendChild(add);
+}
+async function addTravelSub(){
+  var name=$('trvNewSubName').value.trim();
+  if(!name){toast('Enter a name');return;}
+  if(travelSubs().map(function(c){return c.toLowerCase();}).indexOf(name.toLowerCase())>=0){toast('Already exists');return;}
+  data.customCats.travel.push(name);
+  await persist();
+  $('trvNewSubName').value='';$('trvNewSub').style.display='none';
+  trvSub=name;renderTravelSubChips();
+  toast('Travel sub-category "'+name+'" added');
+}
+async function removeTravelSub(name){
+  data.customCats.travel=data.customCats.travel.filter(function(c){return c!==name;});
+  if(trvSub===name)trvSub='Food';
+  await persist();renderTravelSubChips();renderSummary();
 }
 function renderModeChips(){
   var el=$('tModeChips'); el.innerHTML='';
-  ['Private hire','Bus','MRT/LRT'].forEach(function(m){
+  ['Private hire','Bus','MRT/LRT','Other'].forEach(function(m){
     var b=document.createElement('button');
     b.textContent=m;
     if(m===tMode)b.classList.add('sel');
@@ -876,41 +914,6 @@ function showSuggestions(){
   box.style.display='block';
 }
 
-/* ---------------- currency converter ---------------- */
-async function onFxCurChange(){
-  var cur=$('fxCur').value;
-  if(data.fxRates[cur])$('fxRate').value=data.fxRates[cur];
-  else $('fxRate').value='';
-  try{
-    var ctl=new AbortController();
-    var to=setTimeout(function(){ctl.abort();},4000);
-    var r=await fetch('https://api.frankfurter.dev/v1/latest?base='+cur+'&symbols=SGD',{signal:ctl.signal});
-    clearTimeout(to);
-    var j=await r.json();
-    if(j&&j.rates&&j.rates.SGD){
-      $('fxRate').value=j.rates.SGD;
-      data.fxRates[cur]=j.rates.SGD;
-      await persist();
-      toast('Live rate: 1 '+cur+' = '+j.rates.SGD+' SGD');
-    }
-  }catch(e){
-    if(!data.fxRates[cur])toast('Live rate unavailable — enter it manually');
-  }
-}
-async function fxConvert(){
-  var amt=parseFloat($('fxAmt').value);
-  var rate=parseFloat($('fxRate').value);
-  var cur=$('fxCur').value;
-  if(!amt||amt<=0){toast('Enter the foreign amount');return;}
-  if(!rate||rate<=0){toast('Enter the exchange rate');return;}
-  data.fxRates[cur]=rate;
-  await persist();
-  var sgd=amt*rate;
-  $('fAmt').value=sgd.toFixed(2);
-  if(!$('fNote').value.trim())$('fNote').value=amt+' '+cur+' @ '+rate;
-  toast(amt+' '+cur+' = '+fmt(sgd));
-}
-
 /* ---------------- save transaction ---------------- */
 async function saveTx(){
   var amt=parseFloat($('fAmt').value);
@@ -930,6 +933,9 @@ async function saveTx(){
     }else if(tMode==='Bus'){
       tx.transport={mode:'Bus'};
       if(!desc)tx.desc='Bus trip';
+    }else if(tMode==='Other'){
+      tx.transport={mode:'Other'};
+      if(!desc)tx.desc='Transport';
     }else{
       if(calcResult&&calcResult.mode==='MRT/LRT'){
         tx.transport={mode:'MRT/LRT',from:calcResult.from,to:calcResult.to,dist:calcResult.dist};
@@ -976,7 +982,7 @@ async function saveTx(){
   }
   await persist();
   $('fAmt').value='';$('fDesc').value='';$('fNote').value='';
-  $('phFrom').value='';$('phTo').value='';$('fxAmt').value='';
+  $('phFrom').value='';$('phTo').value='';
   $('fDate').value=todayStr();
   $('fTime').value=nowTime();
   $('descSuggest').style.display='none';
@@ -1032,7 +1038,7 @@ async function saveSub(){
   if(!name){toast('Enter a name');return;}
   if(!amt||amt<=0){toast('Enter an amount');return;}
   var freq=$('sFreq').value;
-  var sub={id:'s'+Date.now(),name:name,amount:amt,category:subCat,createdYm:ymOf(new Date()),created:todayStr(),freq:freq};
+  var sub={id:'s'+Date.now(),name:name,amount:amt,category:subCat,createdYm:ymOf(new Date()),created:todayStr(),freq:freq,dir:subDir};
   if(freq==='weekly'){sub.weekday=parseInt($('sWeekday').value);}
   else{
     sub.day=parseInt($('sDay').value);
@@ -1042,7 +1048,7 @@ async function saveSub(){
   applySubscriptions();
   await persist();
   $('sName').value='';$('sAmt').value='';
-  toast('Subscription saved');
+  toast('Recurring payment saved');
   renderAll();
 }
 async function delSub(id){
@@ -1104,8 +1110,9 @@ function renderUpcoming(){
   card.style.display='block';
   $('upcList').innerHTML=rows.map(function(r){
     var lbl=r.away===0?'today':(r.away===1?'tomorrow':r.d.toLocaleDateString('en',{weekday:'short',day:'numeric',month:'short'}));
+    var isIn=r.s.dir==='in';
     return '<div class="upc-row"><span>'+esc(r.s.name)+'<span class="w">'+lbl+'</span></span>'+
-      '<span class="a">−'+fmt(r.s.amount)+'</span></div>';
+      '<span class="a" style="color:'+(isIn?'var(--green)':'var(--red)')+'">'+(isIn?'+':'−')+fmt(r.s.amount)+'</span></div>';
   }).join('');
 }
 
@@ -1217,26 +1224,31 @@ function renderHistory(){
 
 function renderSubList(){
   var el=$('subList');
-  if(!data.subscriptions.length){el.innerHTML='<div class="empty">No subscriptions yet.<br>Add one above and it will be recorded automatically every month.</div>';return;}
+  if(!data.subscriptions.length){el.innerHTML='<div class="empty">No recurring payments yet.<br>Add one above — deductions or money in — and it will be recorded automatically.</div>';return;}
   var MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var WDAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  var mTotal=0,aTotal=0,wTotal=0;
+  var out={weekly:0,monthly:0,annual:0},inn={weekly:0,monthly:0,annual:0};
   var html=data.subscriptions.map(function(s){
-    var when,tag='';
-    if(s.freq==='weekly'){if(!s.paused)wTotal+=s.amount;when='weekly on '+WDAYS[s.weekday];tag='/wk';}
-    else if(s.freq==='annual'){if(!s.paused)aTotal+=s.amount;when='yearly on '+s.day+' '+MONTHS[s.month-1];tag='/yr';}
-    else{if(!s.paused)mTotal+=s.amount;when='monthly on the '+ord(s.day);}
+    var when,tag='',isIn=s.dir==='in';
+    var bucket=isIn?inn:out;
+    if(s.freq==='weekly'){if(!s.paused)bucket.weekly+=s.amount;when='weekly on '+WDAYS[s.weekday];tag='/wk';}
+    else if(s.freq==='annual'){if(!s.paused)bucket.annual+=s.amount;when='yearly on '+s.day+' '+MONTHS[s.month-1];tag='/yr';}
+    else{if(!s.paused)bucket.monthly+=s.amount;when='monthly on the '+ord(s.day);}
     return '<div class="sub-item'+(s.paused?' paused':'')+'"><div class="info"><div class="n">'+esc(s.name)+
+    (isIn?'<span class="sub-tag">IN</span>':'')+
     (s.paused?'<span class="sub-tag" style="background:var(--red-soft);color:var(--red)">PAUSED</span>':'')+'</div>'+
     '<div class="d">'+esc(s.category)+' · '+when+'</div></div>'+
-    '<div style="font-family:var(--mono);font-weight:600;color:var(--red)">−'+fmt(s.amount)+(tag?'<span style="font-size:11px;color:var(--muted)">'+tag+'</span>':'')+'</div>'+
+    '<div style="font-family:var(--mono);font-weight:600;color:'+(isIn?'var(--green)':'var(--red)')+'">'+(isIn?'+':'−')+fmt(s.amount)+(tag?'<span style="font-size:11px;color:var(--muted)">'+tag+'</span>':'')+'</div>'+
     '<button class="pausebtn" onclick="togglePause(\''+s.id+'\')" aria-label="Pause or resume">'+(s.paused?'▶':'⏸')+'</button>'+
     '<button class="del" onclick="delSub(\''+s.id+'\')" aria-label="Delete">✕</button></div>';
   }).join('');
-  html+='<div class="card" style="padding:14px 16px">'+
-    '<div style="display:flex;justify-content:space-between"><b>Monthly total</b><span style="font-family:var(--mono);font-weight:700">'+fmt(mTotal)+'</span></div>';
-  if(wTotal>0)html+='<div style="display:flex;justify-content:space-between;margin-top:8px"><b>Weekly total</b><span style="font-family:var(--mono);font-weight:700">'+fmt(wTotal)+'/wk</span></div>';
-  if(aTotal>0)html+='<div style="display:flex;justify-content:space-between;margin-top:8px"><b>Annual total</b><span style="font-family:var(--mono);font-weight:700">'+fmt(aTotal)+'/yr</span></div>';
+  function totRow(label,val,suffix,color){return '<div style="display:flex;justify-content:space-between;margin-top:8px"><b>'+label+'</b><span style="font-family:var(--mono);font-weight:700;color:'+color+'">'+val+suffix+'</span></div>';}
+  html+='<div class="card" style="padding:14px 16px;margin-top:6px"><div style="display:flex;justify-content:space-between"><b>Monthly deductions</b><span style="font-family:var(--mono);font-weight:700">−'+fmt(out.monthly)+'</span></div>';
+  if(out.weekly>0)html+=totRow('Weekly deductions','−'+fmt(out.weekly),'/wk','var(--ink)');
+  if(out.annual>0)html+=totRow('Annual deductions','−'+fmt(out.annual),'/yr','var(--ink)');
+  if(inn.monthly>0)html+=totRow('Monthly incoming','+'+fmt(inn.monthly),'','var(--green)');
+  if(inn.weekly>0)html+=totRow('Weekly incoming','+'+fmt(inn.weekly),'/wk','var(--green)');
+  if(inn.annual>0)html+=totRow('Annual incoming','+'+fmt(inn.annual),'/yr','var(--green)');
   html+='</div>';
   el.innerHTML=html;
 }
@@ -1349,9 +1361,9 @@ async function restoreBackup(){
     data.subscriptions=d.subscriptions||[];
     data.appliedSubs=d.appliedSubs||{};
     data.customCats=d.customCats||{expense:[],income:[]};
+    if(!data.customCats.travel)data.customCats.travel=[];
     data.trips=d.trips||[];
     data.favs=d.favs||[];
-    data.fxRates=d.fxRates||{};
     await persist();
     refreshChips();renderAll();
     $('bakOverlay').style.display='none';
@@ -1405,7 +1417,7 @@ function renderTravelPie(){
   var g={};
   tx.forEach(function(t){g[t.travel.sub]=(g[t.travel.sub]||0)+t.amount;});
   var entries=Object.entries(g).sort(function(a,b){return b[1]-a[1];});
-  drawPie('pieTrv','legTrv',entries,TRAVEL_SUBS,dayPick==='all'?'No spending recorded for this trip yet.':'No spending recorded on this day.');
+  drawPie('pieTrv','legTrv',entries,travelSubs(),dayPick==='all'?'No spending recorded for this trip yet.':'No spending recorded on this day.');
   $('trvDays').textContent=days?days+(days===1?' day':' days'):'–';
   delArmed=null;$('trvDelBtn').textContent='Delete this trip';
   renderTripCompare();
