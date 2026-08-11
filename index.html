@@ -340,7 +340,8 @@
       <input id="sNewCatName" type="text" placeholder="New category name" maxlength="20">
       <button onclick="addCustomCat('s')">Add</button>
     </div>
-    <button class="btn" onclick="saveSub()">Save subscription</button>
+    <div class="editbar" id="subEditBar"><span>✎ Editing recurring payment</span><button onclick="cancelSubEdit()">Cancel</button></div>
+    <button class="btn" id="subSaveBtn" onclick="saveSub()">Save recurring payment</button>
   </div>
   <h2 style="margin:4px 2px 10px">Your recurring payments</h2>
   <div id="subList"></div>
@@ -512,7 +513,7 @@ var STATIONS={
 var data={transactions:[],subscriptions:[],appliedSubs:{},customCats:{expense:[],income:[],travel:[]},trips:[],favs:[]};
 var editingId=null;
 var entryType='expense', entryCat='Food', subCat='Subscriptions';
-var tMode=null, calcResult=null, trvSub='Food', subDir='out';
+var tMode=null, calcResult=null, trvSub='Food', subDir='out', editingSubId=null;
 var sumYM=ymOf(new Date());
 var histYM=ymOf(new Date());
 
@@ -1038,18 +1039,56 @@ async function saveSub(){
   if(!name){toast('Enter a name');return;}
   if(!amt||amt<=0){toast('Enter an amount');return;}
   var freq=$('sFreq').value;
-  var sub={id:'s'+Date.now(),name:name,amount:amt,category:subCat,createdYm:ymOf(new Date()),created:todayStr(),freq:freq,dir:subDir};
-  if(freq==='weekly'){sub.weekday=parseInt($('sWeekday').value);}
-  else{
-    sub.day=parseInt($('sDay').value);
-    if(freq==='annual')sub.month=parseInt($('sMonth').value);
+  if(editingSubId){
+    var idx=data.subscriptions.findIndex(function(x){return x.id===editingSubId;});
+    if(idx>=0){
+      var old=data.subscriptions[idx];
+      old.name=name;old.amount=amt;old.category=subCat;old.freq=freq;old.dir=subDir;
+      if(freq==='weekly'){old.weekday=parseInt($('sWeekday').value);delete old.day;delete old.month;}
+      else{old.day=parseInt($('sDay').value);delete old.weekday;
+        if(freq==='annual')old.month=parseInt($('sMonth').value);else delete old.month;}
+    }
+    editingSubId=null;
+    $('subEditBar').style.display='none';
+    $('subSaveBtn').textContent='Save recurring payment';
+    toast('Recurring payment updated');
+  }else{
+    var sub={id:'s'+Date.now(),name:name,amount:amt,category:subCat,createdYm:ymOf(new Date()),created:todayStr(),freq:freq,dir:subDir};
+    if(freq==='weekly'){sub.weekday=parseInt($('sWeekday').value);}
+    else{sub.day=parseInt($('sDay').value);if(freq==='annual')sub.month=parseInt($('sMonth').value);}
+    data.subscriptions.push(sub);
+    applySubscriptions();
   }
-  data.subscriptions.push(sub);
-  applySubscriptions();
   await persist();
   $('sName').value='';$('sAmt').value='';
-  toast('Recurring payment saved');
+  if(!editingSubId)toast('Recurring payment saved');
   renderAll();
+}
+function editSub(id){
+  var sub=null;
+  for(var i=0;i<data.subscriptions.length;i++)if(data.subscriptions[i].id===id){sub=data.subscriptions[i];break;}
+  if(!sub)return;
+  editingSubId=id;
+  setSubDir(sub.dir||'out');
+  $('sName').value=sub.name;
+  $('sAmt').value=sub.amount.toFixed(2);
+  $('sFreq').value=sub.freq;
+  updateSubFreqUI();
+  if(sub.freq==='weekly'){$('sWeekday').value=sub.weekday;}
+  else{$('sDay').value=sub.day;if(sub.freq==='annual')$('sMonth').value=sub.month;}
+  subCat=sub.category;
+  renderChips('sCats',catsFor(chipKind('s')),subCat,'s');
+  $('subEditBar').style.display='flex';
+  $('subSaveBtn').textContent='Save changes';
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+function cancelSubEdit(){
+  editingSubId=null;
+  $('subEditBar').style.display='none';
+  $('subSaveBtn').textContent='Save recurring payment';
+  $('sName').value='';$('sAmt').value='';
+  setSubDir('out');
+  toast('Edit cancelled');
 }
 async function delSub(id){
   data.subscriptions=data.subscriptions.filter(function(s){return s.id!==id;});
@@ -1239,6 +1278,7 @@ function renderSubList(){
     (s.paused?'<span class="sub-tag" style="background:var(--red-soft);color:var(--red)">PAUSED</span>':'')+'</div>'+
     '<div class="d">'+esc(s.category)+' · '+when+'</div></div>'+
     '<div style="font-family:var(--mono);font-weight:600;color:'+(isIn?'var(--green)':'var(--red)')+'">'+(isIn?'+':'−')+fmt(s.amount)+(tag?'<span style="font-size:11px;color:var(--muted)">'+tag+'</span>':'')+'</div>'+
+    '<button class="edit" onclick="editSub(\''+s.id+'\')" aria-label="Edit">✎</button>'+
     '<button class="pausebtn" onclick="togglePause(\''+s.id+'\')" aria-label="Pause or resume">'+(s.paused?'▶':'⏸')+'</button>'+
     '<button class="del" onclick="delSub(\''+s.id+'\')" aria-label="Delete">✕</button></div>';
   }).join('');
