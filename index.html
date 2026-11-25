@@ -274,7 +274,7 @@
         </div>
         <button class="btn small" onclick="saveTrip()">Save trip</button>
       </div>
-      <label class="fld">Spent on</label>
+      <label class="fld" id="trvSubLabel">Spent on</label>
       <div class="chips" id="trvSubChips"></div>
       <div class="newcat" id="trvNewSub" style="display:none">
         <input id="trvNewSubName" type="text" placeholder="New sub-category name" maxlength="20">
@@ -414,9 +414,11 @@
     <div class="legend" id="legTrv"></div>
     <div class="totals" style="margin-top:12px;margin-bottom:0">
       <div class="t"><div class="l">Trip length</div><div class="v" id="trvDays">–</div></div>
+      <div class="t inc"><div class="l">Received back</div><div class="v" id="trvRecv">$0.00</div></div>
+      <div class="t"><div class="l">Net spent</div><div class="v" id="trvNet">$0.00</div></div>
     </div>
     <button class="btn small red" id="trvDelBtn" onclick="deleteTrip()">Delete this trip</button>
-    <div class="fare-note" style="margin-top:10px">Covers the whole trip regardless of month. These entries also count in the monthly chart above under "Travel". Deleting a trip keeps its entries in your records.</div>
+    <div class="fare-note" style="margin-top:10px">Covers the whole trip regardless of month. The pie shows what you spent; "Received back" is what friends paid you for the trip, and "Net spent" is the difference. These entries also count in the monthly charts above under "Travel". Deleting a trip keeps its entries in your records.</div>
   </div>
   <div class="card" id="tripCompareCard" style="display:none">
     <h2>Trips compared</h2>
@@ -457,7 +459,7 @@
 /* ---------------- constants ---------------- */
 var EXP_CATS=['Food','Transport','Groceries','Shopping','Bills','Entertainment','Travel','Health','Subscriptions','Other'];
 var TRAVEL_SUBS=['Flights','Transport','Food','Shopping','Accommodation','Attractions','Sim/Data','Other'];
-var INC_CATS=['Salary','Freelance','Refund','Gift','Investment','Other'];
+var INC_CATS=['Salary','Freelance','Refund','Gift','Investment','Travel','Other'];
 var COLORS=['#0E5D3F','#B5452F','#C99A2E','#3A6EA5','#7B4FA0','#2E8C7F','#C4642E','#5B7553','#8A8A8A','#A0527D','#4E6E9E','#8C7A3E'];
 
 /* Official card fares (basic bus & train), effective 27 Dec 2025. [maxKm, fare$] */
@@ -539,6 +541,8 @@ async function load(){
       data.appliedSubs=d.appliedSubs||{};
       data.customCats=d.customCats||{expense:[],income:[]};
       if(!data.customCats.travel)data.customCats.travel=[];
+      var builtIn=INC_CATS.map(function(c){return c.toLowerCase();});
+      data.customCats.income=(data.customCats.income||[]).filter(function(c){return builtIn.indexOf(c.toLowerCase())<0;});
       data.trips=d.trips||[];
       data.favs=d.favs||[];
     }
@@ -719,7 +723,8 @@ function updateTransportPanel(){
   $('tPanel').style.display=show?'block':'none';
   if(!show){tMode=null;calcResult=null;}
   renderModeChips();
-  var showT=entryType==='expense'&&entryCat==='Travel';
+  var showT=entryCat==='Travel';
+  $('trvSubLabel').textContent=entryType==='income'?'Received for':'Spent on';
   $('travelPanel').style.display=showT?'block':'none';
   if(showT){populateTripSelect();renderTravelSubChips();}
   renderFavs();
@@ -947,7 +952,7 @@ async function saveTx(){
       }
     }
   }
-  if(entryType==='expense'&&entryCat==='Travel'){
+  if(entryCat==='Travel'){
     var tripSel=$('trvTrip').value;
     var trip=tripById(tripSel);
     if(!trip){
@@ -955,7 +960,7 @@ async function saveTx(){
       /* editing an entry whose trip was deleted: keep its old travel details */
     }else{
       tx.travel={tripId:trip.id,sub:trvSub,country:trip.country};
-      if(!desc)tx.desc=trvSub+' — '+trip.country;
+      if(!desc)tx.desc=(entryType==='income'?'Paid back: ':'')+trvSub+' — '+trip.country;
     }
   }
   if(!tx.desc)tx.desc=entryCat;
@@ -1454,6 +1459,13 @@ function renderTravelPie(){
 
   var dayPick=daySel.value;
   var tx=dayPick==='all'?allTx:allTx.filter(function(t){return t.date===dayPick;});
+  var allInc=data.transactions.filter(function(t){return t.type==='income'&&t.travel&&t.travel.tripId===tripId;});
+  var incTx=dayPick==='all'?allInc:allInc.filter(function(t){return t.date===dayPick;});
+  var spentSum=tx.reduce(function(a,t){return a+t.amount;},0);
+  var recvSum=incTx.reduce(function(a,t){return a+t.amount;},0);
+  var netSum=spentSum-recvSum;
+  $('trvRecv').textContent='+'+fmt(recvSum);
+  $('trvNet').textContent=(netSum<0?'−':'')+fmt(netSum);
   var g={};
   tx.forEach(function(t){g[t.travel.sub]=(g[t.travel.sub]||0)+t.amount;});
   var entries=Object.entries(g).sort(function(a,b){return b[1]-a[1];});
